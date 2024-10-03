@@ -1,0 +1,75 @@
+data:
+  data: QM9
+  batch_size: 32
+  dir: '/data/'
+
+ckpt: gdss_qm9
+
+sampler:
+  predictor: Reverse
+  corrector: Langevin
+  snr: 0.2
+  scale_eps: 0.7
+  n_steps: 1
+
+sample:
+  use_ema: False
+  noise_removal: True
+  probability_flow: False
+  eps: 1.0e-4
+  seed: 42
+
+run_name: train_QM9_vina_GIN_3_300_bs32_lr1e-3
+max_iter: 50000
+max_epochs: 10
+grad_norm_clip: 10
+learning_rate: 1.0e-3
+lr_decay: False
+weight_decay: 0.
+load_checkpoint_path: null
+dist: False
+
+task: train
+random_seed: 123
+exp_round: 0
+log_file: default
+gpu_idx: 0
+ckpt_root: null
+ckpt_dir: null
+pre_ckpt_path: null
+save_tag: null
+other_saved: null
+pytest: False
+train:
+  weight_decay: 0.
+  save_gap: 10
+  tr_ctn: False
+  epoch: 0
+  ctn_epoch: 0
+  alpha: 0.2
+  stage_stones: []
+  max_epoch: 200
+  train_bs: 32
+  val_bs: 256
+  test_bs: 256
+  lr: 1e-3
+  mile_stones: [ 150 ]
+model:
+  dim_hidden: 300
+  dim_ffn: 300
+  dropout_rate: 0.5
+  generative_model_name: null
+  model_name: GIN
+  n_head: 4 # GAT only
+  dropout: 0.1
+  model_layer: 3
+  model_level: graph
+  global_pool: mean
+dataset:
+  dataloader_name: BaseDataLoader
+  dataset_root: null
+  generate: False
+  dim_node: 4
+  dim_edge: null
+  num_classes: null
+  num_envs: null
