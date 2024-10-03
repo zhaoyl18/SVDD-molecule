@@ -39,7 +39,7 @@ def get_docking_scores(target, mols, verbose=False):
     scores = - np.array(dockingvina.predict(smiles_valid))
     if verbose:
         print(f'Number of docking errors: {sum(scores < -99)} / {len(scores)}')
-    scores = list(np.clip(scores, 0, 15))
+    scores = list(np.clip(scores, 0, None))
 
     if None in smiles:
         scores = [scores.pop(0) if smi is not None else 0. for smi in smiles]
