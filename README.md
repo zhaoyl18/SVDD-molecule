@@ -1,15 +1,32 @@
-# Derivative-Free Guidance in Diffusion Models with Soft Value-Based Decoding (DNAs, RNAs)
+# Derivative-Free Guidance in Diffusion Models with Soft Value-Based Decoding (Molecules)
 
 This code accompanies [the paper](https://arxiv.org/abs/2408.08252) on soft value-based decoding in diffusion models, where the objective is to maximize downstream reward functions in diffusion models. 
 
 This repo is the implementation of molecule generation tasks. For biological sequences, such as **DNA (enhancers)** and **RNA (5'UTRs)**, refer to [here](https://github.com/masa-ue/SVDD). For **images**, refer to [here](https://github.com/masa-ue/SVDD-image).
 
+Visualization examples of the ligand-protein docking task is shown below.
+
+<figure>
+  <img src="media/mol_vina5_plot_pymol_grid.jpg" alt="Image description">
+  <figcaption>Visualization: docking with braf</figcaption>
+</figure>
+
 The algorithm is summarized in the following table/figure.  
 
+![title](media/summary_algorithm.png)
+![title](media/summary_image.png) 
 
-![title](media/summary_image.png) ![title](media/summary_algorithm.png)
+## Prerequisites
 
+Run the following commands to install the dependencies:
 
+```sh
+conda create -n mood python=3.8
+conda activate mood
+conda install -c pytorch pytorch==1.12.0 cudatoolkit=11.3
+conda install -c conda-forge rdkit=2020.09 openbabel
+pip install tqdm pyyaml pandas easydict networkx==2.6.3 numpy==1.20.3
+```
 
 ## Decoding
 
@@ -28,6 +45,24 @@ If we want to use the baseline method SMC, run the following
 
 `CUDA_VISIBLE_DEVICES=7 python main_TDS.py --type decode_valueF --config sample_zinc250k --reward_name QED --sample_M 1 --alpha 0.3`
 
+<figure>
+  <img src="media/molecule_qed_distribution.png" alt="Image description">
+  <figcaption>Histogram comparison: QED</figcaption>
+</figure>
+
+<figure>
+  <img src="media/molecule_vina1_distribution.png" alt="Image description">
+  <figcaption>Histogram comparison: docking with parp1</figcaption>
+</figure>
+
+[//]: # (![QED]&#40;media/molecule_qed_distribution.png&#41; )
+
+[//]: # ()
+[//]: # (![Docking-parp1]&#40;media/molecule_vina1_distribution.png&#41; )
+
+[//]: # ()
+[//]: # (![Visualization]&#40;media/mol_vina5_plot_pymol_grid.jpg&#41; )
+
 ## Training
 
 `CUDA_VISIBLE_DEVICES=7 python main.py --type decode_valueF_train --config sample_qm9 --reward_name QED`
@@ -36,6 +71,9 @@ The above command runs GIN value function training. The reward can be QED or SA.
 The `load_checkpoint_path` in config file need to be `null` to train GIN from scratch.
 Note that running this needs PyG packages installed.
 
+```sh
+pip install torch-scatter torch-sparse torch-cluster torch-geometric
+```
 
 
 ## Pretrained generative model
