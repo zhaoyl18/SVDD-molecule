@@ -2,7 +2,7 @@
 
 This code accompanies [the paper](https://arxiv.org/abs/2408.08252) on soft value-based decoding in diffusion models, where the objective is to maximize downstream reward functions in diffusion models. 
 
-This repo is the implementation of molecule generation tasks. For biological sequences, such as **DNA (enhancers)** and **RNA (5'UTRs)**, refer to [here](https://github.com/masa-ue/SVDD). For **images**, refer to [here](https://github.com/masa-ue/SVDD-image).
+This repo is the implementation of **molecule** generation tasks. For biological sequences, such as **DNA (enhancers)** and **RNA (5'UTRs)**, refer to [here](https://github.com/masa-ue/SVDD). For **images**, refer to [here](https://github.com/masa-ue/SVDD-image).
 
 Visualization examples of the ligand-protein docking task is shown below.
 
