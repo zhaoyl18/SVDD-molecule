@@ -21,11 +21,18 @@ The algorithm is summarized in the following table/figure.
 Run the following commands to install the dependencies:
 
 ```sh
-conda create -n mood python=3.8
-conda activate mood
+conda create -n svdd python=3.8
+conda activate svdd
 conda install -c pytorch pytorch==1.12.0 cudatoolkit=11.3
-conda install -c conda-forge rdkit=2020.09 openbabel
-pip install tqdm pyyaml pandas easydict networkx==2.6.3 numpy==1.20.3
+pip install rdkit==2023.9.1
+pip install -U numpy=1.22.2
+pip install scipy==1.8
+pip install pandas==1.4.2 tqdm matplotlib==3.5.2 networkx==2.8.8 scikit-learn apricot-select
+git clone https://github.com/molecularsets/moses.git
+cd moses/
+python setup.py install
+pip install easydict pyemd wandb dill
+conda install conda-forge::openbabel
 ```
 
 ## Decoding
