@@ -2,14 +2,16 @@ import os
 import time
 import pickle
 import math
+from tqdm import trange
 import torch
 import wandb
 import numpy as np
 import pandas as pd
 from torch.cuda.amp import GradScaler
+from utils.loader import load_sde
 from utils.logger import Logger, set_log, start_log, train_log, sample_log, check_log
 from utils.loader import load_ckpt, load_data, load_seed, load_device, load_model_from_ckpt, \
-                         load_ema_from_ckpt, load_sampling_fn, load_eval_settings
+                         load_ema_from_ckpt, load_sampling_fn, load_sampling_fn_refine, load_eval_settings
 from utils.graph_utils import adjs_to_graphs, init_flags, quantize, quantize_mol
 from utils.plot import save_graph_list, plot_graphs_list
 from evaluation.stats import eval_graph_list
@@ -23,6 +25,8 @@ from GINs import BaseModel
 from MOOD_scorer.scorer import get_scores
 import gc
 import multiprocessing as mp
+
+from utils.graph_utils import mask_adjs, mask_x, gen_noise
 
 
 # -------- Sampler for molecule generation tasks --------
@@ -44,6 +48,7 @@ class decode_Sampler_mol(object):
         if not check_log(self.log_folder_name, self.log_name):
             start_log(logger, self.configt)
             train_log(logger, self.configt)
+            
         sample_log(logger, self.config)
         self.configt.data.dir = self.config.data.dir
         # -------- Load models --------
@@ -60,11 +65,19 @@ class decode_Sampler_mol(object):
         elif 'vina' in rewardf:
             self.vina_type = int(rewardf[-1])
             self.rewardf = self.vina_reward
-        else:
+        elif rewardf == 'QED':
             self.rewardf = self.qed_reward
+        elif rewardf == 'logbarrier':
+            self.rewardf = self.logbarrier_reward
 
     def sample(self, strat='controlled', sample_M=20, alpha = 0.3, largerbetter=True, ckpt=False):
-        self.sampling_fn = load_sampling_fn(self.configt, self.config.sampler, self.config.sample, self.device, self.config.data.batch_size, strat=strat)
+        self.sampling_fn = load_sampling_fn(self.configt, 
+                                            self.config.sampler, 
+                                            self.config.sample, 
+                                            self.device, 
+                                            self.config.data.batch_size, 
+                                            strat=strat
+                                        )
 
         self.init_flags = init_flags(self.train_graph_list, self.configt, self.config.data.batch_size).to(self.device[0])
         if strat=='controlled' or strat=='controlled_tw':
@@ -79,6 +92,33 @@ class decode_Sampler_mol(object):
         else:
             x, adj, x_mid, adj_mid, _ = self.sampling_fn(self.model_x, self.model_adj, self.init_flags)
             return x.detach(), adj.detach(), x_mid, adj_mid
+
+    def sample_refinement(self, K, x_s, adj_s, flags, strat='controlled', sample_M=20, alpha = 0.3, largerbetter=True, ckpt=False):
+        sampling_fn = load_sampling_fn_refine(K,
+                                            self.configt, 
+                                            self.config.sampler, 
+                                            self.config.sample, 
+                                            self.device, 
+                                            self.config.data.batch_size, 
+                                            strat=strat
+                                        )
+
+        # self.init_flags = init_flags(self.train_graph_list, self.configt, self.config.data.batch_size).to(self.device[0])
+        if strat=='controlled' or strat=='controlled_tw':
+            if ckpt:
+                x, adj, _ = sampling_fn(x_s, adj_s, flags, self.model_x, self.model_adj, self.init_flags, self.model.pred_out, sample_M=sample_M, larger_better=largerbetter)
+            else:
+                x, adj, _ = sampling_fn(x_s, adj_s, flags, self.model_x, self.model_adj, self.init_flags, self.rewardf, sample_M=sample_M, larger_better=largerbetter)
+            return x, adj
+        else:
+            pass
+        # elif strat=='tds':
+        #     x, adj, _ = self.sampling_fn(self.model_x, self.model_adj, self.init_flags, self.rewardf, alpha = alpha, larger_better=largerbetter)
+        #     return x, adj
+        # else:
+        #     x, adj, x_mid, adj_mid, _ = self.sampling_fn(self.model_x, self.model_adj, self.init_flags)
+        #     return x.detach(), adj.detach(), x_mid, adj_mid
+    
 
     @torch.no_grad()
     def controlled_decode(self, gen_batch_num=1, sample_M=20, largerbetter=True):
@@ -220,6 +260,76 @@ class decode_Sampler_mol(object):
         return torch.cat(reward_model_preds), top_k_values, torch.cat(baseline_preds)
 
     @torch.no_grad()
+    def controlled_tw_decode_sequential_refinement(self, gen_batch_num=1, sample_M=10, K=50, S=5, largerbetter=True):
+        reward_model_preds = []
+        for i in range(gen_batch_num):
+            
+            # Initial design
+            x, adj = self.sample(strat='controlled_tw', sample_M=sample_M, largerbetter=largerbetter)
+            flags = self.init_flags
+            
+            x_s = x
+            adj_s = adj
+            
+            for s in trange(0, (S), desc = '[Seq-refine iter]', position = 1, leave=False):
+                # Phase 1: noising
+                sde_x = load_sde(self.configt.sde.x) #sde.x : {'type': 'VP', 'beta_min': 0.1, 'beta_max': 1.0, 'num_scales': 1000}
+                sde_adj = load_sde(self.configt.sde.adj) # sde.adj : {'type': 'VE', 'beta_min': 0.2, 'beta_max': 1.0, 'num_scales': 1000}
+                
+                eps = self.config.sample.eps
+                timesteps = torch.linspace(sde_adj.T, eps, sde_x.N, device=x_s.device)
+                t = torch.ones(x.shape[0], device=x_s.device) * timesteps[sde_x.N-1-K]
+
+                z_x = gen_noise(x_s, flags, sym=False)
+                mean_x, std_x = sde_x.marginal_prob(x_s, t)
+                noised_x = mean_x + std_x[:, None, None] * z_x
+                noised_x = mask_x(noised_x, flags)
+
+                z_adj = gen_noise(adj_s, flags, sym=True) 
+                mean_adj, std_adj = sde_adj.marginal_prob(adj_s, t)
+                noised_adj = mean_adj + std_adj[:, None, None] * z_adj
+                noised_adj = mask_adjs(noised_adj, flags)
+
+                
+                # Phase 2: reward optimization
+                x_s, adj_s = self.sample_refinement(K, 
+                                     noised_x,
+                                     noised_adj,
+                                     flags,
+                                     strat='controlled_tw', 
+                                     sample_M=sample_M, 
+                                     largerbetter=largerbetter
+                                )
+                
+
+            qeds = self.rewardf(x_s, adj_s)
+            reward_model_preds.extend(qeds)
+
+        self.logger.log("Sequantial refinement sampling done.")
+
+        baseline_preds = []
+        all_preds = []
+        for i in range(gen_batch_num * sample_M):
+            x, adj, x_mid, adj_mid = self.sample(strat='ori')
+            qeds = self.rewardf(x, adj)
+            if i < gen_batch_num:
+                baseline_preds.extend(qeds)
+            all_preds.extend(qeds)
+        self.logger.log("Best of N (baseline) sampling done.")
+
+        all_values = torch.cat(all_preds)
+        
+        # Compute the number of top elements to select
+        k = int(len(all_values) / sample_M)
+        # Get the top k values
+        if largerbetter:
+            top_k_values, _ = torch.topk(all_values, k)  # larger better, else: largest=False
+        else:
+            top_k_values, _ = torch.topk(all_values, k, largest=False)
+        return torch.cat(reward_model_preds), top_k_values, torch.cat(baseline_preds)
+
+
+    @torch.no_grad()
     def controlled_tds_decode(self, gen_batch_num=1, alpha = 0.3, sample_M =1 ,largerbetter=True):
         reward_model_preds = []
         for i in range(gen_batch_num):
@@ -343,6 +453,16 @@ class decode_Sampler_mol(object):
 
         return torch.FloatTensor(qed_scores).unsqueeze(1)
 
+    def logbarrier_reward(self, x, adj, c1=1.0, c2=0.01, c=0.70):
+        qed_scores = self.qed_reward(x, adj)
+        sa_scores = self.SA_reward(x, adj)
+        
+        penalized_scores = qed_scores + c2 * torch.log(torch.max(sa_scores - c, torch.tensor(c1, device=sa_scores.device, dtype=sa_scores.dtype)))
+
+        
+        return penalized_scores
+        
+        
 
     def save_checkpoint(self, epoch, model, best_loss, optimizer, tokens, scaler, save_path):
         raw_model = model.module if hasattr(model, "module") else model

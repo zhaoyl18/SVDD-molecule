@@ -1,7 +1,7 @@
 data:
   data: ZINC250k
-  batch_size: 128
-  dir: '/data/'
+  batch_size: 64
+  dir: '/n/fs/pgmf/projects/SVDD-molecule/data/'
 
 ckpt: gdss_zinc250k
 
@@ -18,6 +18,8 @@ sample:
   probability_flow: False
   eps: 1.0e-4
   seed: 42
+  K: 50
+  S: 5
 
 run_name: train
 max_iter: 50000

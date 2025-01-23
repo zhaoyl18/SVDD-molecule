@@ -12,7 +12,7 @@ from torch import Tensor
 from torch_geometric.nn.inits import reset
 from torch_geometric.typing import OptPairTensor, Adj, OptTensor, Size
 from torch_geometric.utils.loop import add_self_loops, remove_self_loops
-from torch_sparse import SparseTensor
+# from torch_sparse import SparseTensor
 from torch.nn import Identity
 
 from BaseGNN import GNNBasic, BasicEncoder

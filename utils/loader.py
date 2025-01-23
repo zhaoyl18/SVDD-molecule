@@ -7,7 +7,7 @@ from models.ScoreNetwork_X import ScoreNetworkX, ScoreNetworkX_GMH
 from sde import VPSDE, VESDE, subVPSDE
 
 from losses import get_sde_loss_fn
-from solver import get_pc_sampler, S4_solver
+from solver import get_pc_sampler, S4_solver, get_pc_sampler_refine
 from evaluation.mmd import gaussian, gaussian_emd
 from utils.ema import ExponentialMovingAverage
 
@@ -117,7 +117,6 @@ def load_loss_fn(config):
                                 likelihood_weighting=False, eps=config.train.eps)
     return loss_fn
 
-
 def load_sampling_fn(config_train, config_module, config_sample, device, config_batch_size=100, strat='ori', sample_M=20):
     sde_x = load_sde(config_train.sde.x)
     sde_adj = load_sde(config_train.sde.adj)
@@ -138,6 +137,44 @@ def load_sampling_fn(config_train, config_module, config_sample, device, config_
         shape_adj = (config_train.data.batch_size, max_node_num, max_node_num)
         
     sampling_fn = get_sampler(sde_x=sde_x, sde_adj=sde_adj, shape_x=shape_x, shape_adj=shape_adj, 
+                                predictor=config_module.predictor, corrector=config_module.corrector,
+                                snr=config_module.snr, scale_eps=config_module.scale_eps, 
+                                n_steps=config_module.n_steps, 
+                                probability_flow=config_sample.probability_flow, 
+                                continuous=True, denoise=config_sample.noise_removal, 
+                                eps=config_sample.eps, device=device_id, strat=strat)
+    return sampling_fn
+
+
+def load_sampling_fn_refine(
+                K, 
+                config_train, 
+                config_module, 
+                config_sample, 
+                device, 
+                config_batch_size=100, 
+                strat='ori', 
+                sample_M=20
+            ):
+    sde_x = load_sde(config_train.sde.x) #sde.x : {'type': 'VP', 'beta_min': 0.1, 'beta_max': 1.0, 'num_scales': 1000}
+    sde_adj = load_sde(config_train.sde.adj) # sde.adj : {'type': 'VE', 'beta_min': 0.2, 'beta_max': 1.0, 'num_scales': 1000}
+    max_node_num  = config_train.data.max_node_num  # 38
+
+    device_id = f'cuda:{device[0]}' if isinstance(device, list) else device
+
+    # if config_module.predictor == 'S4':
+    #     get_sampler = S4_solver
+    # else:
+    #     get_sampler = get_pc_sampler
+
+    if config_train.data.data in ['QM9', 'ZINC250k']:
+        shape_x = (config_batch_size, max_node_num, config_train.data.max_feat_num) # (128, 38, 9)
+        shape_adj = (config_batch_size, max_node_num, max_node_num) # (128, 38, 38)
+    else:
+        shape_x = (config_train.data.batch_size, max_node_num, config_train.data.max_feat_num)
+        shape_adj = (config_train.data.batch_size, max_node_num, max_node_num)
+        
+    sampling_fn = get_pc_sampler_refine(K=K, sde_x=sde_x, sde_adj=sde_adj, shape_x=shape_x, shape_adj=shape_adj, 
                                 predictor=config_module.predictor, corrector=config_module.corrector,
                                 snr=config_module.snr, scale_eps=config_module.scale_eps, 
                                 n_steps=config_module.n_steps, 
@@ -170,7 +207,7 @@ def load_ckpt(config, device, ts=None, return_ckpt=False):
     ckpt_dict = {}
     if ts is not None:
         config.ckpt = ts
-    path = f'/data/xinerli/GDSS/checkpoints/{config.data.data}/{config.ckpt}.pth'
+    path = f'/n/fs/pgmf/projects/SVDD-molecule/checkpoints/{config.data.data}/{config.ckpt}.pth'
     ckpt = torch.load(path, map_location=device_id)
     print(f'{path} loaded')
     ckpt_dict= {'config': ckpt['model_config'], 'params_x': ckpt['params_x'], 'x_state_dict': ckpt['x_state_dict'],

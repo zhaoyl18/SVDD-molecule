@@ -41,14 +41,20 @@ def main(work_type_args):
         else:
             sampler = Sampler(config)
 
-        reward_model_preds, selected_baseline_preds, baseline_preds = sampler.controlled_tw_decode(sample_M=args.sample_M, largerbetter=True)
+        reward_model_preds, selected_baseline_preds, baseline_preds = sampler.controlled_tw_decode_sequential_refinement(
+            sample_M=args.sample_M, 
+            K=config.sample.K,
+            S=config.sample.S,
+            largerbetter=True
+        )
+        
         hepg2_values_ours = reward_model_preds.cpu().numpy()
         hepg2_values_selected = selected_baseline_preds.cpu().numpy()
         hepg2_values_baseline = baseline_preds.cpu().numpy()
         # Create a DataFrame for seaborn
         
         print("Towards reward: %s"%(args.reward_name))
-        print("SVDD generations - 10th: {:.4f}, 50th: {:.4f}, 90th: {:.4f}, Mean: {:.4f}".format(*np.percentile(hepg2_values_ours, [10, 50, 90]), np.mean(hepg2_values_ours)))
+        print("Iterative refinement generations - 10th: {:.4f}, 50th: {:.4f}, 90th: {:.4f}, Mean: {:.4f}".format(*np.percentile(hepg2_values_ours, [10, 50, 90]), np.mean(hepg2_values_ours)))
         print("Best of N generations - 10th: {:.4f}, 50th: {:.4f}, 90th: {:.4f}, Mean: {:.4f}".format(*np.percentile(hepg2_values_baseline, [10, 50, 90]), np.mean(hepg2_values_baseline)))
 
         np.savez( "./log/%s-%s-%s-%s-tw" %(config.data.data, args.sample_M, args.reward_name, args.version), decoding = hepg2_values_ours, baseline = hepg2_values_baseline)
